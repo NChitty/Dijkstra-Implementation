@@ -72,7 +72,7 @@ class Vertex {
     }
 
     public void setCost(int cost) {
-        this.cost = cost;
+        this.cost = cost;  
     }
 
     public int getWeightTo(int to) {
