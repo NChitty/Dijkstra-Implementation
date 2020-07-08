@@ -5,12 +5,16 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.TreeMap;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.PriorityQueue;
 
 public class DijkstraImplementation {
 
-    static TreeMap<Integer, Vertex> vertices;
+    //Keeps track of all the serial numbers and their related vertices
+    static HashMap<Integer, Vertex> vertices;
+    //Keeps track of all the unvisited nodes added after conclusion of setting weights
+    static PriorityQueue<Vertex> unvisited = new PriorityQueue<>(1, new Vertex(-1));
 
     public static void main(String[] args) {
         File inFile = new File("cop3503-asn2-input.txt");
@@ -36,13 +40,13 @@ public class DijkstraImplementation {
         }
         try {
             noOfVertices = Integer.parseInt(reader.readLine());
-            vertices = new TreeMap<>();
-            sourceVertex = Integer.parseInt(reader.readLine());
-            numberOfEdges = Integer.parseInt(reader.readLine());
+            vertices = new HashMap<>();
             for (int i = 0; i < noOfVertices; i++) {
-                Vertex vertex = new Vertex(i+1, noOfVertices);
+                Vertex vertex = new Vertex(i+1);
                 vertices.put(i+1, vertex);
             }
+            sourceVertex = Integer.parseInt(reader.readLine());
+            numberOfEdges = Integer.parseInt(reader.readLine());
             for (int i = 0; i < numberOfEdges; i++) {
                 String[] edgeInfo = reader.readLine().split(" ");
                 int vertexSerial1 = Integer.parseInt(edgeInfo[0]);
@@ -50,11 +54,11 @@ public class DijkstraImplementation {
                 int weight = Integer.parseInt(edgeInfo[2]);
                 Vertex vertex1 = vertices.get(vertexSerial1);
                 Vertex vertex2 = vertices.get(vertexSerial2);
-                vertex1.createEdge(vertexSerial2, weight);
-                vertex2.createEdge(vertexSerial1, weight);
+                Vertex.createEdge(vertex1, vertex2, weight);
             }
             vertices.get(sourceVertex).setParent(-1);
             vertices.get(sourceVertex).setCost(-1);
+            unvisited.add(vertices.get(sourceVertex));
         } catch (NumberFormatException | IOException e) {
             e.printStackTrace();
         }
@@ -67,25 +71,34 @@ public class DijkstraImplementation {
     }
 
     public static void doDijkstra(int source, int numberOfVertices) {
-        Vertex current = vertices.get(source);
-        
-        while (it.hasNext()) {
-            if(current.visited) continue;
-            current.visited = true;
-            // started at the source but iterator might look at it again
-            for(int i = 0; i < current.edges.length; i++) {
-                if(current.edges[i] == 0) continue; //there is no node
-                if(vertices.get(i-1).getParent() == 0) { //unvisited case
-                    vertices.get(i-1).setParent(current.getSerial());
-                    vertices.get(i-1).setCost(current.edges[i]);
-                } else if(!vertices.get(i-1).visited
-                && vertices.get(i-1).getCost() > (current.getCost() + current.edges[i])) {
-                    //case where the cost is lower going through this node way than the current path
-                    vertices.get(i-1).setParent(current.getSerial());
-                    vertices.get(i-1).setCost(current.getCost() + current.edges[i]);
-                } 
+        Vertex current;
+        //while unvisited is not empty
+        while(!unvisited.isEmpty()) {
+            current = unvisited.poll();
+            while(current.visited) {
+                current = unvisited.poll();
+                if(current == null) break;
             }
-            current = it.next();
+            if(current == null) break;
+            //for each neighbor
+            for(Vertex neighbor : current.weights.keySet()) {
+                //calculate cost through current
+                int cost = current.getCost() == -1 ? current.getEdgeWeight(neighbor) 
+                : current.cost + current.getEdgeWeight(neighbor);
+                //if calculated cost < current cost
+                if(cost < neighbor.cost) {
+                    //replace cost and parent
+                    neighbor.setCost(cost);
+                    neighbor.setParent(current.serial);
+                }
+                //add all neighbors to the priority queue
+                if(neighbor.visited == false) {
+                    unvisited.add(neighbor);
+                }
+            }
+            //mark as visited
+            current.visited = true;
+            //the queue will set current to the least cost, lowest serial neighboy
         }
     }
 
@@ -101,8 +114,8 @@ public class DijkstraImplementation {
         BufferedWriter writer = null;
         try {
             writer = new BufferedWriter(new FileWriter(output));
-            writer.write(vertices.size() - 1);
-            for (Vertex v : vertices) {
+            writer.write(vertices.size() + "");
+            for (Vertex v : vertices.values()) {
                 writer.newLine();
                 writer.write(v.getSerial() + " " + v.getCost() + " " + v.getParent());
             }
@@ -113,26 +126,24 @@ public class DijkstraImplementation {
     }
 }
 
-class Vertex {
+class Vertex implements Comparator<Vertex> {
 
     // The number associated with this vertex
     int serial;
-    // The weight associated with traveling to the vertex with the index as the
-    // serial number
-    int[] edges;
+    //Map containing an integer w.r.t the vertex serial and the value being
+    //the vertex object
+    HashMap<Integer, Vertex> edges = new HashMap<>();
+    //Map containing the vertex being travelled to and the weights
+    //associated with traversing that edge
+    HashMap<Vertex, Integer> weights = new HashMap<>();
     // the node preceding is parent, cost is how much it costs to get there
     int parent = 0, cost = Integer.MAX_VALUE; // 0 = unvisited, max int represents infinity
 
     boolean visited = false;
 
 
-    public Vertex(int serial, int numberOfVertices) {
+    public Vertex(int serial) {
         this.serial = serial;
-        this.edges = new int[numberOfVertices + 1];
-    }
-
-    public void createEdge(int to, int weight) {
-        this.edges[to] = weight;
     }
 
     public void setParent(int parent) {
@@ -143,13 +154,32 @@ class Vertex {
         this.cost = cost;
     }
 
-    public int getWeightTo(int to) {
-        return this.edges[to];
-    }
-
     public int getSerial() {
         return this.serial;
     }
+
+    /**
+     * 
+     * @param v The vertex to the edge
+     * @return the weight of the edge associated with the vertex, if it does not exist, then the integer is max value
+     */
+    public int getEdgeWeight(Vertex v) {
+        if(v == null) {
+            return Integer.MAX_VALUE;
+        } else {
+            return weights.get(v);
+        }
+    }
+
+    /**
+     * 
+     * @param serial The serial number of the vertex we are trying to travel to
+     * @return Null if the vertex does not exist, the vertex at the end of the edge if it does
+     */
+    public Vertex getVertexAtEdge(int serial) {
+        return edges.get(serial);
+    }
+
 
     public int getParent() {
         return this.parent;
@@ -157,5 +187,31 @@ class Vertex {
 
     public int getCost() {
         return this.cost;
+    }
+
+    /**
+     * Creates a bidirectional edge between two vertices
+     * @param a A vertex
+     * @param b The other vertex
+     * @param weight The weight associated with the edge
+     */
+    public static void createEdge(Vertex a, Vertex b, int weight) {
+        a.edges.put(b.serial, b);
+        b.edges.put(a.serial, a);
+        a.weights.put(b, weight);
+        b.weights.put(a, weight);
+    }
+
+    @Override
+    public String toString() {
+        return "Vertex: " + this.serial + "| Visited: " + this.visited;
+    }
+
+    @Override
+    public int compare(Vertex arg0, Vertex arg1) {
+        if(arg0.cost - arg1.cost == 0)
+            return arg0.serial - arg1.serial;
+        else
+            return arg0.cost - arg1.cost;
     }
 }
